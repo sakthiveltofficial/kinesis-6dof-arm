@@ -1,133 +1,294 @@
-# YAM Robotics Lab — Windows Web Simulator for WSL2 MJLab (`Mjlab-Lift-Cube-Yam`)
+# Kinesis — AI-Powered 6-DOF Robot Arm Simulation
 
-A browser-based 3D robot pick-and-place simulator on Windows connected to the live **MJLab 1.6.0 (`mujoco-warp`)** physics simulation and trained **RSL-RL ONNX policy** (`2026-10-28_05-58-03.onnx`) running inside WSL2 (`Ubuntu-24.04`).
+<p align="center">
+  <strong>From a trained reinforcement-learning policy to an interactive robotics lab in the browser.</strong>
+</p>
 
----
+<p align="center">
+  <a href="https://github.com/sakthiveltofficial/kinesis-6dof-arm"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-kinesis--6dof--arm-181717?logo=github"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%20%2B%20WSL2-0078D4?logo=windows">
+  <img alt="Simulation" src="https://img.shields.io/badge/Simulation-MuJoCo%20%2B%20MJLab-00A67D">
+  <img alt="Inference" src="https://img.shields.io/badge/Inference-ONNX%20Runtime-6B55D3">
+  <img alt="Frontend" src="https://img.shields.io/badge/Frontend-React%20%2B%20Three.js-61DAFB?logo=react">
+</p>
 
-## 1. Architecture & Reused WSL Assets
+**Kinesis** is a robotics engineering project by **Sakthivel Thangaraj** that connects a trained reinforcement-learning policy to a live MuJoCo/MJLab simulation and makes it accessible through an interactive 3D browser application.
 
-This project uses the **Windows Frontend + WSL2 Simulation Backend** architecture:
+Open the Windows browser, place a cube in the workspace, select a target, and watch the trained policy control the simulated Yam arm. The physics and policy run in MJLab inside WSL2; the interactive interface is built with React, TypeScript, and Three.js.
 
-- **WSL2 Ubuntu-24.04 Source of Truth**:
-  - WSL Username: `webnox`
-  - WSL Project Path: `/home/webnox/workspace/mjlab-linux`
-  - Windows UNC Path: `\\wsl.localhost\Ubuntu-24.04\home\webnox\workspace\mjlab-linux`
-  - Task ID: `Mjlab-Lift-Cube-Yam`
-  - Trained ONNX Policy: `/home/webnox/workspace/mjlab-linux/logs/rsl_rl/yam_lift_cube/2026-10-28_05-58-03/2026-10-28_05-58-03.onnx`
-  - Trained Checkpoint: `/home/webnox/workspace/mjlab-linux/logs/rsl_rl/yam_lift_cube/2026-10-28_05-58-03/model_1999.pt`
-  - YAM Robot MJCF & 18 STL Meshes: `/home/webnox/workspace/mjlab-linux/src/mjlab/asset_zoo/robots/i2rt_yam/xmls/yam.xml` and `assets/*.stl` (copied into `frontend/public/meshes/` and `assets/i2rt_yam/` for fast browser rendering while preserving original files untouched).
+> **Project focus:** embodied AI · reinforcement learning · robotics simulation · ONNX inference · full-stack engineering
 
-- **Simulation & Policy Pipeline**:
-  - **Observations (`1 × 29`)**: Computed directly by MJLab's `ObservationManager`:
-    - `joint_pos` (8): relative joint positions (`joint1..6`, `left_finger`, `right_finger`)
-    - `joint_vel` (8): relative joint velocities
-    - `ee_to_cube` (3): end-effector (`grasp_site`) to cube vector in robot base frame
-    - `cube_to_goal` (3): cube to `lift_height` command target vector in robot base frame
-    - `actions` (7): previous step actions
-  - **Actions (`1 × 7`)**: Predicted by ONNX Runtime (`onnxruntime 1.30.0`) and applied via MJLab's `RslRlVecEnvWrapper` and `JointPositionAction` (`YAM_ACTION_SCALE`) with `decimation = 4` (`physics_dt = 0.005s`, `step_dt = 0.02s` / 50 Hz).
+## At a glance
 
----
+| | |
+|---|---|
+| **Robot** | i2rt YAM arm with parallel gripper |
+| **Task** | Cube lifting and target reaching |
+| **Simulation** | MJLab 1.6.0 / MuJoCo |
+| **Policy** | Trained RSL-RL policy exported to ONNX |
+| **Inference contract** | 29 observations → 7 action outputs |
+| **Frontend** | React, TypeScript, Vite, Three.js |
+| **Backend** | FastAPI + WebSockets |
+| **Host workflow** | Windows UI connected to Ubuntu 24.04 in WSL2 |
+| **Hardware used for verification** | NVIDIA GeForce RTX 5060 Ti, 8 GB VRAM |
 
-## 2. Quick Launch on Windows
+## Demo
 
-### One-Click Launch
-From Windows Explorer or PowerShell in `d:\sakthivel workspace\Workspace\RnD\Robotics`:
+The simulator lets you:
 
-1. Double-click **`start_web_demo.bat`** or run **`.\start_web_demo.ps1`** in PowerShell:
-   ```powershell
-   powershell.exe -ExecutionPolicy Bypass -File .\start_web_demo.ps1
-   ```
-2. The script automatically:
-   - Verifies access to the WSL2 MJLab assets via UNC path.
-   - Starts the FastAPI simulation backend inside WSL2 on `http://127.0.0.1:8005`.
-   - Starts the React + TypeScript + Three.js Vite frontend on `http://127.0.0.1:5173`.
-   - Opens `http://127.0.0.1:5173` in your default Windows browser.
+1. Explore the robot in an interactive 3D workspace.
+2. Place the cube inside the permitted starting region.
+3. Select a target in 3D or set its XYZ coordinates.
+4. Run the ONNX policy against the actual MJLab simulation.
+5. Pause, resume, reset, or replay an episode while observing live state updates.
 
-### Separate Backend / Frontend Launchers
-- Start WSL2 Backend only:
-  ```powershell
-  .\start_backend.ps1
-  ```
-- Start Windows Frontend only:
-  ```powershell
-  .\start_frontend.ps1
-  ```
+<!-- Add a short GIF or screenshot here when available.
+<p align="center">
+  <img src="docs/demo.gif" alt="Kinesis robot arm picking up and moving a cube" width="900">
+</p>
+-->
 
-### First-Time Dependency Setup (Already Completed)
-- **WSL2 Backend** (inside `/home/webnox/workspace/mjlab-linux/.venv`):
-  ```bash
-  cd ~/workspace/mjlab-linux && uv pip install fastapi uvicorn httpx
-  ```
-- **Windows Frontend**:
-  ```powershell
-  cd frontend
-  npm install
-  ```
+## Why I built it
 
----
+I wanted to connect the pieces of a practical robotics AI workflow: a robot model, a trained policy, a physics simulator, runtime inference, and an interface that makes the result easy to explore.
 
-## 3. Website Controls & Features
+This project brings those pieces together:
 
-Open **`http://127.0.0.1:5173`** in your Windows browser:
+- **Reinforcement learning to runtime inference:** use an existing RSL-RL checkpoint exported to ONNX.
+- **Simulation fidelity:** keep MJLab/MuJoCo as the source of truth for the robot, contacts, object pose, and physics.
+- **Interactive 3D controls:** connect workspace clicks and coordinate controls to the live simulation, not frontend-only objects.
+- **Cross-platform engineering:** run the Linux robotics stack in WSL2 while interacting from a Windows browser.
+- **Observable behavior:** expose simulation state and episode controls through an API and WebSocket stream.
 
-- **Place Cube**:
-  - Toggle **Place Cube Mode** (`Click to Place Cube`) and click directly on the 3D table inside the cyan boundary (`X ∈ [0.16, 0.46]m`, `Y ∈ [-0.26, 0.26]m`), or adjust the `X / Y / Z` sliders and click **Place Cube in Simulation**.
-  - Immediately writes the new root pose and zero velocity to the `cube` freejoint in MuJoCo (`write_root_link_pose_to_sim` + `sim.forward()`).
-- **Set Target**:
-  - Toggle **Set Target Mode** (`Click to Set Target`) and click on the 3D workspace (uses the configured Target Z height), or adjust the `X / Y / Z` sliders / presets and click **Set Target in Simulation**.
-  - Immediately updates `LiftingCommand.target_pos` in MJLab's `command_manager` and recomputes `cube_to_goal` observations.
-- **Run Pick and Place**: Executes the loaded ONNX policy in real time at 50 Hz, streaming all 18 visual mesh world poses, joint states, cube pose, end-effector pose, and reward metrics over WebSockets (`/ws/simulation`).
-- **Pause / Resume**: Pauses and resumes the live simulation loop safely.
-- **Reset Episode / Randomize Setup**: Resets the robot to `HOME_KEYFRAME` and restores the configured cube/target coordinates (or samples random in-distribution poses when clicking **Randomize Setup**).
-- **Replay Episode**: Replays the recorded trajectory by restoring each recorded `qpos`/`qvel`/`ctrl` snapshot into MuJoCo (`sim.forward()`) and streaming the resulting state.
-- **Reset Camera**: Resets the 3D OrbitControls camera to the default laboratory view.
+## Architecture
 
----
+```text
+Windows Browser
+      │
+      ▼
+React + TypeScript + Three.js
+      │  HTTP API + WebSocket
+      ▼
+FastAPI Backend (inside WSL2)
+      │
+      ├── ONNX Runtime
+      │     └── Trained RSL-RL policy
+      │           29 observations → 7 actions
+      │
+      └── MJLab / MuJoCo
+            ├── Yam robot and gripper
+            ├── Cube and target command
+            ├── ObservationManager
+            ├── Existing action processing
+            └── Physics stepping
+```
 
-## 4. Target Behavior & Policy Characteristics
+**Design principle:** the browser provides interaction and visualization; the backend remains responsible for simulation state, observation construction, action processing, and physics.
 
-The existing `Mjlab-Lift-Cube-Yam` checkpoint (`model_1999.pt` / `2026-10-28_05-58-03.onnx`) was trained with `LiftingCommandCfg` (`difficulty="dynamic"`):
-- **Trained Cube Spawn Region**: `X ∈ [0.20, 0.40]m`, `Y ∈ [-0.20, 0.20]m`, `Z ∈ [0.02, 0.05]m`
-- **Trained 3D Goal Region**: `X ∈ [0.30, 0.50]m`, `Y ∈ [-0.20, 0.20]m`, `Z ∈ [0.20, 0.40]m` (`success_threshold = 0.05m`)
+### Reused assets
 
-### Observed Real Policy Behavior Across Target Locations
-1. **3D Targets inside the Trained Lift Envelope (`Z ∈ [0.20, 0.40]m`)**:
-   - The robot reaches down to the cube, closes the parallel crank gripper around the cube, lifts it smoothly, and holds it stably at the 3D target position with **2 mm – 8 mm steady-state error** (`episode_success = True`).
-2. **Low-Z / Near-Table Targets (`Z ∈ [0.05, 0.15]m`)**:
-   - Because `Mjlab-Lift-Cube-Yam` is formulated as a continuous 3D goal-reaching/holding task without a gripper-release command term, when given a low target (`Z = 0.05m`), the policy grasps the cube and transports it horizontally to the target `(X, Y)` coordinates while holding it in the gripper at `Z ≈ 0.08m` (`position_error ≈ 0.031m < 0.05m`).
+The project reuses the Yam MJCF model and its STL meshes from the source MJLab repository. The original training checkpoint and ONNX model remain in WSL2; the website does not need to duplicate the full MJLab environment or Python virtual environment on Windows.
 
----
+- **WSL distribution:** `Ubuntu-24.04`
+- **WSL project:** `/home/webnox/workspace/mjlab-linux`
+- **Task ID:** `Mjlab-Lift-Cube-Yam`
+- **Robot model:** `i2rt_yam/xmls/yam.xml`
+- **Inference model:** `2026-10-28_05-58-03.onnx`
 
-## 5. Backend API Reference (`http://127.0.0.1:8005`)
+## Results from the recorded verification run
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/health` | Returns backend health, CUDA device, ONNX load status, and `(1, 29)` / `(1, 7)` shapes |
-| `GET` | `/api/config` | Returns robot joints, limits, 18 visual geom mesh definitions, and workspace bounds |
-| `GET` | `/api/state` | Returns a full snapshot of the current MuJoCo simulation state |
-| `POST` | `/api/simulation/reset` | Resets episode (`{"randomize": false}` or `{"randomize": true}`) |
-| `POST` | `/api/object/position` | Validates bounds and updates actual cube pose in MuJoCo (`{"x", "y", "z", "yaw"}`) |
-| `POST` | `/api/target` | Validates bounds and updates `LiftingCommand.target_pos` (`{"x", "y", "z"}`) |
-| `POST` | `/api/simulation/start` | Starts ONNX policy execution (`{"reset_to_configured": false, "max_steps": 400}`) |
-| `POST` | `/api/simulation/pause` | Pauses active simulation or replay |
-| `POST` | `/api/simulation/resume` | Resumes paused simulation or replay |
-| `POST` | `/api/simulation/stop` | Stops simulation loop |
-| `POST` | `/api/simulation/replay` | Replays the recorded episode through MuJoCo state |
-| `WS` | `/ws/simulation` | Streams live 50 Hz simulation state packets to connected browsers |
+The repository's existing verification record reports these results:
 
----
+| Check | Observed result |
+|---|---|
+| ONNX input | `(1, 29)` |
+| ONNX output | `(1, 7)` |
+| Cube starting position | `[0.31, -0.09, 0.02] m` |
+| Selected target | `[0.39, 0.11, 0.27] m` |
+| Final cube position | `[0.3903, 0.1151, 0.2751] m` |
+| Final position error | `0.0072 m (7.2 mm)` |
+| WebSocket frames received | `153` |
+| Episode status | `episode_success = True` |
 
-## 6. Executed Verification Results
+The recorded run also reports successful cube-position updates, target-command updates, reset, pause/resume, replay, and Windows frontend health checks against the WSL backend.
 
-All checks were executed against the live WSL2 MJLab environment (`NVIDIA GeForce RTX 5060 Ti`, `cuda:0`) and Windows frontend proxy (`backend/verify_e2e.py`):
+These are results from the recorded test configuration, not a guarantee that every arbitrary target position will succeed.
 
-- **WSL Asset Access**: Verified UNC path `\\wsl.localhost\Ubuntu-24.04\home\webnox\workspace\mjlab-linux` and copied 18 STL meshes.
-- **ONNX Model Load & Shapes**: Loaded `2026-10-28_05-58-03.onnx`; verified input `obs` shape `(1, 29)` and output `actions` shape `(1, 7)`.
-- **Cube Position Update (`POST /api/object/position`)**: Set cube to `[0.31, -0.09, 0.02]m`; verified MuJoCo `root_link_pos_w` updated immediately.
-- **Target Update (`POST /api/target`)**: Set target to `[0.39, 0.11, 0.27]m`; verified MJLab `LiftingCommand.target_pos` updated immediately.
-- **Live Pick-and-Place Execution (`POST /api/simulation/start`)**:
-  - Cube started at `[0.31, -0.09, 0.02]m`, Target at `[0.39, 0.11, 0.27]m`.
-  - Streamed 153 live WebSocket frames to client.
-  - Final cube position: `[0.3903, 0.1151, 0.2751]m` (**`0.0072 m` (7.2 mm) final position error**, `episode_success = True`).
-- **Pause / Resume / Replay / Reset**: Verified state transitions (`running` -> `paused` at step 25 -> `running` -> `completed` -> `replaying` -> `idle` -> `reset` at step 0).
-- **Windows Launcher & Proxy**: Verified `.\start_web_demo.ps1` health checks on both `http://127.0.0.1:8005/api/health` and `http://127.0.0.1:5173/api/health`.
+## Quick start — Windows
+
+### Prerequisites
+
+- Windows 11 with WSL2 enabled.
+- An Ubuntu distribution named `Ubuntu-24.04`.
+- The existing MJLab project in WSL2 at `~/workspace/mjlab-linux`.
+- The trained ONNX policy at the path below.
+- Node.js and npm available on Windows.
+- Python/MJLab dependencies installed in the WSL environment.
+
+The current launcher configuration expects WSL username `webnox` and project path `/home/webnox/workspace/mjlab-linux`. Adjust the launcher configuration if your environment differs.
+
+### Launch the full application
+
+From the repository directory in PowerShell:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\start_web_demo.ps1
+```
+
+Or double-click:
+
+```text
+start_web_demo.bat
+```
+
+The launcher is designed to verify WSL asset access, start the FastAPI backend inside WSL2, start the Vite frontend, and open the website.
+
+### URLs
+
+- **Web application:** http://127.0.0.1:5173
+- **Backend health:** http://127.0.0.1:8005/api/health
+- **Backend configuration:** http://127.0.0.1:8005/api/config
+
+### Start components separately
+
+```powershell
+.\start_backend.ps1
+.\start_frontend.ps1
+```
+
+### Frontend setup
+
+```powershell
+cd frontend
+npm install
+npm run build
+```
+
+The WSL backend uses the existing MJLab environment. The project's recorded backend dependency setup is:
+
+```bash
+cd ~/workspace/mjlab-linux
+uv pip install fastapi uvicorn httpx
+```
+
+## Using the simulator
+
+### 1. Place the cube
+
+Enable **Click to Place Cube** and select a location on the table inside the workspace boundary, or enter XYZ coordinates. The backend validates the requested position and updates the cube's actual MuJoCo state.
+
+Configured placement boundary:
+
+- `X ∈ [0.16, 0.46] m`
+- `Y ∈ [-0.26, 0.26] m`
+
+### 2. Choose a target
+
+Enable **Click to Set Target** and choose a point, or edit XYZ values. The backend updates MJLab's `LiftingCommand` target so that goal-relative observations reflect the selected target.
+
+### 3. Run the policy
+
+Select **Run Pick and Place**. The backend obtains observations from MJLab, calls ONNX Runtime, applies predicted actions through the existing action pipeline, advances MuJoCo, and streams the state to the browser.
+
+### 4. Control the episode
+
+Use pause, resume, stop/reset, replay, randomize setup, and reset camera to explore the run.
+
+## Policy and simulation details
+
+### Observation vector
+
+The model expects a float32 observation with shape `(1, 29)`:
+
+| Group | Dimensions | Meaning |
+|---|---:|---|
+| `joint_pos` | 8 | Relative positions of six arm joints and two gripper joints |
+| `joint_vel` | 8 | Joint velocities |
+| `ee_to_cube` | 3 | End-effector-to-cube displacement |
+| `cube_to_goal` | 3 | Cube-to-target displacement |
+| `actions` | 7 | Previous action values |
+| **Total** | **29** | |
+
+The policy outputs `(1, 7)` actions. These are passed through the existing vector-environment wrapper and joint-position action processing rather than being mapped manually in the browser.
+
+### Training envelope
+
+The recorded task configuration uses a dynamic lifting command:
+
+- **Cube spawn:** `X ∈ [0.20, 0.40] m`, `Y ∈ [-0.20, 0.20] m`, `Z ∈ [0.02, 0.05] m`
+- **Goal:** `X ∈ [0.30, 0.50] m`, `Y ∈ [-0.20, 0.20] m`, `Z ∈ [0.20, 0.40] m`
+- **Success threshold:** `0.05 m`
+
+The interactive workspace can expose positions outside the model's training distribution. Results outside the demonstrated envelope are not guaranteed. This task demonstrates lifting and target reaching; it should not be interpreted as a universally capable pick-and-place policy for arbitrary objects and goals.
+
+## API reference
+
+Base URL: `http://127.0.0.1:8005`
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/health` | Backend health, device, and model status |
+| `GET` | `/api/config` | Robot, mesh, and workspace configuration |
+| `GET` | `/api/state` | Current simulation snapshot |
+| `POST` | `/api/simulation/reset` | Reset episode |
+| `POST` | `/api/object/position` | Validate and set cube position |
+| `POST` | `/api/target` | Validate and set target command |
+| `POST` | `/api/simulation/start` | Start policy inference loop |
+| `POST` | `/api/simulation/pause` | Pause simulation |
+| `POST` | `/api/simulation/resume` | Resume simulation |
+| `POST` | `/api/simulation/stop` | Stop simulation |
+| `POST` | `/api/simulation/replay` | Replay recorded episode |
+| `WS` | `/ws/simulation` | Stream live simulation state |
+
+## Tech stack
+
+- **Robotics & physics:** MJLab, MuJoCo, RSL-RL
+- **Policy inference:** ONNX Runtime
+- **Backend:** Python, FastAPI, WebSockets
+- **Frontend:** React, TypeScript, Vite, Three.js, React Three Fiber
+- **Development environment:** Windows 11, WSL2, Ubuntu 24.04
+- **GPU used in verification:** NVIDIA GeForce RTX 5060 Ti, 8 GB VRAM
+
+## Engineering challenges addressed
+
+- Reusing a Linux robotics environment from a Windows-first workflow.
+- Keeping frontend robot geometry synchronized with live simulator state.
+- Preserving the trained policy's observation order and environment action semantics.
+- Applying clicked cube positions and targets to the simulation itself.
+- Streaming state to a browser through WebSockets.
+- Supporting episode controls without replacing the trained policy with a scripted animation.
+
+## Roadmap
+
+- [ ] Add a short demo GIF and screenshots from the browser simulator.
+- [ ] Evaluate repeatable results across a matrix of cube starts and targets.
+- [ ] Report success rate and position error across multiple seeded episodes.
+- [ ] Explore policy retraining for broader target distributions and explicit gripper-release behavior.
+- [ ] Simplify first-time installation and Windows setup.
+
+## About the builder
+
+Hi, I’m **Sakthivel Thangaraj** — a **Full-Stack & AI Engineer** working across product engineering, AI-native development, and applied AI systems. I enjoy taking an idea from architecture through implementation and into a usable product.
+
+My work spans web applications, AI-assisted engineering workflows, agentic systems, and now embodied AI: connecting learned policies to simulation, runtime inference, and interactive tools. Kinesis is a hands-on exploration of that intersection.
+
+### A few highlights
+
+- Built an AI ticket-support platform for a UAE fuel retailer operating **50+ stations**, with a reported **70% reduction in ticket resolution time**.
+- Helped digitize a college ERP project that was featured in Tamil Nadu newspapers.
+- Invited speaker at **Multimedia University (MMU), Malaysia**.
+- Delivered **20+ technical talks** on software and emerging technologies.
+- Currently exploring **reinforcement learning, MuJoCo/MJLab, ONNX deployment, and embodied AI** through projects like Kinesis.
+
+I’m especially interested in engineering that closes the gap between a model that works in a notebook and a system people can actually use.
+
+- GitHub: [@sakthiveltofficial](https://github.com/sakthiveltofficial)
+- Project: [kinesis-6dof-arm](https://github.com/sakthiveltofficial/kinesis-6dof-arm)
+
+## Contributing
+
+Issues, technical feedback, and improvements are welcome. Please include reproducible setup details and distinguish observed results from expected behavior.
+
+## License
+
+No license is declared in this repository yet. Before redistributing or reusing code or robot assets, check applicable upstream asset licenses and add an explicit license for this project.
