@@ -1,0 +1,14 @@
+# Executed inside WSL2 Ubuntu-24.04 using ~/workspace/mjlab-linux/.venv/bin/python
+# Core simulation & RL packages are pre-installed in the MJLab venv:
+# - mjlab==1.6.0 (editable at ~/workspace/mjlab-linux)
+# - mujoco==3.16.0
+# - mujoco-warp==3.16.0
+# - torch==2.14.0
+# - onnx==1.22.0
+# - onnxruntime==1.30.0
+# - rsl-rl-lib==5.5.1
+# Web API dependencies installed into the venv:
+fastapi>=0.115.0
+uvicorn>=0.32.0
+websockets>=13.0
+pydantic>=2.0.0
